@@ -1,8 +1,3 @@
-/**
- * Version adapted by Alberto Navarro for his own box, using different LCD and less backdoor logic (none)
- * Thanks Mikal Hart for sharing your code and idea.
- * */
-
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
@@ -25,7 +20,8 @@ Servo myservo;
 long previousMillis;
 int interval = 1000;
 
-int SERVOPIN = 8; 
+int SERVOPIN = 9; 
+int RELEPIN = 8;
 long int servostart; // timer to keep track of the servo
 
 // polulu power switch is on this pin
@@ -65,11 +61,11 @@ const int offset = 2; // we're in UTC+2 now
 static const float MILESTONE_1_LAT = 51.4878248, MILESTONE_1_LON = 0.063191;
 static const int MILESTONE_1_THRESHOLD = 1000; // required minimum distance to Faaborg havn
 
-static const float DAD_LAT = 51.4878248, DAD_LON = 0.063191;
-static const int DAD_THRESHOLD = 500; // required minimum distance to DAD 
+static const float MILESTONE_2_LAT = 51.4878248, MILESTONE_2_LON = 0.063191;
+static const int MILESTONE_2_THRESHOLD = 500; // required minimum distance to DAD 
 
-static const float MOM_LAT = 51.4878248, MOM_LON = 0.063191;
-static const int MOM_THRESHOLD = 500;
+static const float MILESTONE_3_LAT = 51.4878248, MILESTONE_3_LON = 0.063191;
+static const int MILESTONE_3_THRESHOLD = 500;
 
 // to prevent usage of the old Servo library, I am instead making sure, that I only talk to one of 
 // Software Serial or the Servo at a time. These two flags keep check of that.
@@ -84,10 +80,8 @@ int tasknr; // which location will we go to next?
 /* setup */
 void setup() 
 { 
-  
-                         
+pinMode(RELEPIN, OUTPUT);
   lcd.init();   
-  lcd.backlight();
 
   if (debug) {
     Serial.begin(115200);
@@ -137,6 +131,7 @@ void setup()
   // to be moved when the box goes live
   // or maybe print gamestatus + welcome (back)
   // for now I am making sure only to print welcome when the game is in the running state
+  lcd.backlight();
   if (gamestate == 1) {
     // stringToLcd is explained below.
     if (tasknr == 0) { 
@@ -149,7 +144,8 @@ void setup()
       stringToLCD(getPSTR("tasknr: "));lcd.print(tasknr); delay(2000);
     }
 
-    stringToLCD(getPSTR("Getting signal..."));
+    stringToLCD(getPSTR("Getting signal..."), 2000);
+    lcd.noBacklight();
   }
  
   // debug-LED. Should probably be disabled when we go "live" as noone can see it anyway
@@ -280,6 +276,7 @@ void loop() {
                       unsigned long distance = gps.distance_between(flat,flon,MILESTONE_1_LAT,MILESTONE_1_LON);
                       // are we within 1000m? (could probably be set lower to make it more exciting)
                       // are we within threshold?
+                      lcd.backlight();
                       if (distance < MILESTONE_1_THRESHOLD) {
                          stringToLCD(getPSTR("Enhorabuena, habeis llegado al hito 1."), 1000);
                          tasknr++;
@@ -296,14 +293,15 @@ void loop() {
             break; 
             case 1: // Second mission
                   if (age < 1000) { 
-                      unsigned long distance = gps.distance_between(flat,flon,DAD_LAT,DAD_LON);
-                      if (distance < DAD_THRESHOLD) {
+                      unsigned long distance = gps.distance_between(flat,flon, MILESTONE_2_LAT,MILESTONE_2_LON);
+                      lcd.backlight();
+                      if (distance < MILESTONE_2_THRESHOLD) {
                          stringToLCD(getPSTR("Hito 2"), 1000); 
                          tasknr++;
                          EEPROM.write(1,tasknr);
                          mastertimerstart = millis(); // resetting time just in case the GPS-signal dies for a bit
                       } else {
-                           stringToLCD(getPSTR("Id al hito 1, si quereis que la caja se abra."), 3000);
+                           stringToLCD(getPSTR("Id al hito 2, si quereis que la caja se abra."), 3000);
                            stringToLCD(getPSTR("Apagandome..."), 3000);
                            digitalWrite(POLULUPIN,HIGH);
                            delay(100);
@@ -314,16 +312,18 @@ void loop() {
 
             case 2: // 3rd mission
                   if (age < 1000) { 
-                      unsigned long distance = gps.distance_between(flat,flon,MOM_LAT,MOM_LON);
-                      if (distance < MOM_THRESHOLD) {
+                      unsigned long distance = gps.distance_between(flat,flon,MILESTONE_3_LAT,MILESTONE_3_LON);
+                      lcd.backlight();
+                      if (distance < MILESTONE_3_THRESHOLD) {
                          stringToLCD(getPSTR("Hito 3"), 1000); 
                          tasknr++;
                          gamestate = 2;
                          EEPROM.write(0, 2);
                          mastertimerstart = millis(); // resetting time just in case the GPS-signal dies for a bit
                       } else {
-                           stringToLCD(getPSTR("Go and visit mom -  The one in the same country as you are in"), 3000);
-                           stringToLCD(getPSTR("Good Bye"), 3000);
+                           stringToLCD(getPSTR("Distancia al ultimo hito..."), 3000);
+                           lcd.print(distance);  
+                           lcd.print(" metros"); 
                            digitalWrite(POLULUPIN,HIGH);
                            delay(100);
                            gamestate = 3; // switch to message if running on external power
@@ -342,17 +342,21 @@ void loop() {
         gpsattached = 0;  
         unlockbox();
                 
+        lcd.backlight();
         stringToLCD(getPSTR("La caja se ha abierto."));
         stringToLCD(getPSTR("Felisitasiones!!"));
         delay(3000);
-        digitalWrite(POLULUPIN,HIGH);
-        delay(100);
+        
         gamestate = 3; // switch to message if running on external power
         
-        EEPROM.write(0,0);
-        EEPROM.write(1,0);
-  
+        EEPROM.write(0,4);
+        delay(100);
+        
+        digitalWrite(POLULUPIN,HIGH);
+        
+        
         break;
+        
     case 3: // we're waiting for power to be removed
      if (!powermessage) {
        delay(1000);
@@ -369,6 +373,31 @@ void loop() {
 
      }
      break;
+     
+     case 4:
+       if (debug)
+         Serial.println(getPSTR("Resetting game"));
+       lcd.clear();
+       lcd.backlight();
+       stringToLCD(getPSTR("Resetting game, close the box."));
+       lcd.noBacklight();
+       delay(10000);
+       nss.end(); //stop talking to the GPS
+        delay(250);
+        gpsattached = 0;  
+        
+       lockbox();
+       
+       EEPROM.write(0,0);
+       EEPROM.write(1,0);
+       delay(100);
+       
+       gamestate = 3; // switch to message if running on external power
+       digitalWrite(POLULUPIN,HIGH);
+       
+       
+     break;
+     
    }
  
 } 
@@ -378,33 +407,34 @@ void loop() {
 */
 
 void lockbox() {
-  servoattached = 1;
+  digitalWrite(RELEPIN, HIGH);
+  delay(500);
   if (!myservo.attached()) { 
     myservo.attach(SERVOPIN); 
-    myservo.write(10); 
   }
 
-  // myservo.slowmove(10,70);
-  myservo.write(0);
-  servostart = millis();
+  myservo.write(45);
   delay(500);
   
-  myservo.write(0);
- 
+  myservo.detach();
+  digitalWrite(RELEPIN, LOW);
+
+  servostart = millis();
 }
 
 void unlockbox() {
-  servoattached = 1;
+  digitalWrite(RELEPIN, HIGH);
+  delay(500);
   if (!myservo.attached()) { 
     myservo.attach(SERVOPIN); 
   }
 
   myservo.write(90);
-  servostart = millis();
   delay(500);
-  if (debug) { 
-    digitalWrite(13,HIGH); 
-  }
+
+  myservo.detach();
+  digitalWrite(RELEPIN, LOW);
+  servostart = millis();
 }
 
 void stringToLCD(char *stringIn) {
